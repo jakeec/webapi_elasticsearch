@@ -1,23 +1,9 @@
 namespace api.Services;
 
-using System.Collections.Generic;
-using api.Domain;
-using Elasticsearch.Net;
 using Nest;
 
-public interface ISearchResult<T>
-{
-    bool IsValid { get; set; }
-    IList<string> Suggestions { get; set; }
-    IList<T> Hits { get; set; }
-}
-
-public class SearchResult<T> : ISearchResult<T>
-{
-    public bool IsValid { get; set; }
-    public IList<string> Suggestions { get; set; }
-    public IList<T> Hits { get; set; }
-}
+using api.Domain;
+using api.Mappers;
 
 public interface ISearchEngine
 {
@@ -26,28 +12,13 @@ public interface ISearchEngine
 
 public class ElasticsearchSearchEngine : ISearchEngine
 {
-    private readonly IConfiguration _configuration;
-    private readonly ElasticClient _elasticClient;
+    private readonly IElasticClient _elasticClient;
+    private readonly ILogger<ElasticsearchSearchEngine> _logger;
 
-    public ElasticsearchSearchEngine(IConfiguration configuration)
+    public ElasticsearchSearchEngine(IElasticClient elasticClient, ILogger<ElasticsearchSearchEngine> logger)
     {
-        _configuration = configuration;
-        _elasticClient = InitialiseElasticClient(_configuration);
-    }
-
-    private ElasticClient InitialiseElasticClient(IConfiguration configuration)
-    {
-        string username = configuration["ElasticClient:Username"];
-        string password = configuration["ElasticClient:Password"];
-        string defaultIndex = configuration["ElasticClient:DefaultIndex"];
-        Uri uri = new(configuration["ElasticClient:Uri"]);
-
-        var settings = new ConnectionSettings(uri)
-            .DefaultIndex(defaultIndex)
-            .BasicAuthentication(username, password)
-            .ServerCertificateValidationCallback(CertificateValidations.AllowAll)
-            .DisableDirectStreaming();
-        return new ElasticClient(settings);
+        _elasticClient = elasticClient;
+        _logger = logger;
     }
 
     public async Task<ISearchResult<NewsHeadline>> SearchAsync(string searchTerm)
@@ -60,13 +31,20 @@ public class ElasticsearchSearchEngine : ISearchEngine
                 Query = searchTerm,
                 Operator = Operator.Or,
                 Lenient = true
+            },
+            Suggest = new SuggestContainer {
+                {
+                    "term-suggester", new SuggestBucket {
+                        Text = searchTerm,
+                        Term = new TermSuggester {
+                            MaxEdits = 2,
+                            Field = Infer.Field<NewsHeadline>(n => n.ShortDescription)
+                        }
+                    }
+                }
             }
         };
         var searchResponse = await _elasticClient.SearchAsync<NewsHeadline>(searchRequest);
-        return new SearchResult<NewsHeadline>
-        {
-            IsValid = searchResponse.IsValid,
-            Hits = searchResponse.Documents.ToList<NewsHeadline>(),
-        };
+        return searchResponse.ToNewsHeadlineSearchResult();
     }
 }

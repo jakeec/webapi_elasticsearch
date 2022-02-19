@@ -1,9 +1,11 @@
 using api.Services;
+using api.StartupExtensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
+builder.Services.AddElasticSearch(builder.Configuration);
 builder.Services.AddSingleton<ISearchEngine, ElasticsearchSearchEngine>();
 
 builder.Services.AddControllers();

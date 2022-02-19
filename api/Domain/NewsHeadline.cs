@@ -2,7 +2,6 @@ using Nest;
 
 namespace api.Domain;
 
-[Serializable]
 public class NewsHeadline
 {
     public DateTime Date { get; set; }
